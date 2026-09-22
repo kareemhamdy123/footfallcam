@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# generated outputs / weights / large media - keep the repo lightweight
+outputs/*
+!outputs/.gitkeep
+data/*
+!data/.gitkeep
+*.pt
+*.onnx
+*.mp4
+*.avi
