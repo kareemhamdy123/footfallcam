@@ -12,6 +12,7 @@ walking past the far end of a short gate segment would still be counted.
 """
 from __future__ import annotations
 
+import dataclasses
 from typing import Protocol, Sequence
 
 Point = tuple[float, float]
@@ -90,3 +91,68 @@ def crossed_line(prev_point: Point, curr_point: Point, line: HasEndpoints) -> st
 def zones_containing(point: Point, zones: Sequence[HasPolygon]) -> list:
     """Every zone whose polygon contains `point`, in configuration order."""
     return [zone for zone in zones if point_in_polygon(point, zone.polygon)]
+
+
+@dataclasses.dataclass(frozen=True)
+class Band:
+    """A horizontal slice of the frame, produced by `auto_bands`.
+
+    Structurally compatible with `config.Zone` - it has the same `name`,
+    `polygon` and `kind` - so anything that consumes zones consumes these
+    without knowing where they came from.
+    """
+
+    name: str
+    polygon: list[Point]
+    kind: str = "band"
+
+
+# Depth label per band, nearest the camera first. A fixed depth order is far
+# more useful in a report than "band_0", and the naming is stable regardless of
+# how many bands are configured.
+FRIENDLY_DEPTH_NAMES = {
+    1: ("only",),
+    2: ("near", "far"),
+    3: ("near", "mid", "far"),
+}
+
+
+def _band_names(count: int) -> tuple[str, ...]:
+    """Depth names for `count` bands.
+
+    A fixed list indexed from the near end would label the deepest band of a
+    2-band split "mid", which is wrong - so the names are chosen per count, and
+    fall back to numbered middles for counts the friendly names do not cover.
+    """
+    friendly = FRIENDLY_DEPTH_NAMES.get(count)
+    if friendly is not None:
+        return friendly
+    middles = count - 2
+    return ("near",) + tuple(f"mid_{i + 1}" for i in range(middles)) + ("far",)
+
+
+def auto_bands(width: int, height: int, count: int = 3) -> list[Band]:
+    """Split the frame into `count` full-width horizontal bands by relative Y.
+
+    This is the zero-config path: with no zones configured, area profiling and
+    zone headcounts still work by dividing the floor into depth slices. Bands
+    tile the frame completely, so a point inside the frame is always in exactly
+    one band.
+    """
+    if count < 1:
+        raise ValueError(f"band count must be at least 1, got {count}")
+
+    names = _band_names(count)
+    bounds = [round(index * height / count) for index in range(count + 1)]
+    bands: list[Band] = []
+    for index in range(count):
+        top, bottom = bounds[index], bounds[index + 1]
+        if bottom <= top:
+            continue  # skip a band rounded away to nothing
+        bands.append(
+            Band(
+                name=f"band_{names[index]}",
+                polygon=[(0, top), (width, top), (width, bottom), (0, bottom)],
+            )
+        )
+    return bands

@@ -6,8 +6,8 @@ tracking → geometry → features**, wired together by a single pipeline.
 The target is the FootfallCam `3D PRO 2` / `3D Extend` brochure's 20
 characteristics. The CV backbone that makes all 20 possible is complete; the
 feature modules are being added one phase at a time. **Implemented so far: 1 (Video Counting), 4 (Playback / video proof), 6 (Gender
-recognition), 13 (Multiple counting lines) and the counting subset of 14 (Group
-counting) — the remaining 15 are not.**
+recognition), 13 (Multiple counting lines), 17 (Zone counting), the counting
+subset of 14 (Group counting) and 5 (Area profiling) — the remaining 14 are not.**
 
 > This repo is mid-refactor. The previous 20-feature implementation is preserved
 > on the `legacy/sprawling-implementation` branch; `main` is the rebuilt,
@@ -94,6 +94,8 @@ src/detection/                  src/tracking/
    └──────────► features/ ◄────────┘
                   counter.VideoCounter      (characteristic 1)
                   playback.PlaybackEngine   (characteristic 4)
+                  area_profiling.AreaProfiler  (characteristic 5)
+                  zone_counting.ZoneCounter  (characteristic 17)
                         │
                         ▼
               src/visualizer.py  →  outputs/annotated.mp4
@@ -154,7 +156,7 @@ floor. Do not rebalance the heuristic's midpoints to force output.
 python -m pytest tests/ -v
 ```
 
-203 tests, ~2.7 s. Logic tests need neither a video nor a model; the tests that
+249 tests, ~2.9 s. Logic tests need neither a video nor a model; the tests that
 do need one skip cleanly when `data/sample.mp4` or `ffmpeg` is absent, and none
 of them touch the network.
 
@@ -170,6 +172,8 @@ of them touch the network.
 | `test_gender_classifier.py` | Label contract, unusable crops, cue extraction, cue agreement, backend precedence, determinism — mostly pinning the paths that answer "unknown" |
 | `test_demographics_aggregator.py` | Idempotent per-person recording, percentages over the classified population, unknown handling |
 | `test_playback_and_visualizer.py` | Frame is never mutated, role colours, trails, lines, zone tints, raw-detection preference, HUD fields, and that an unwired KPI renders as `n/a` rather than `0` |
+| `test_area_profiling.py` | Dwell accumulation, foot-point attribution, unzoned time kept out of the denominator, engagement share, auto bands |
+| `test_zone_counting.py` | Per-zone headcount, peak as a high-water mark, active track ids, auto bands |
 | `test_video_io.py` | File/webcam/URL source rules, stream info and FPS fallback, writer round-trip, H.264 transcode verification |
 
 Two infrastructure files are load-bearing: `pytest.ini` pins the project root

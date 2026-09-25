@@ -80,6 +80,11 @@ lines:
     p2: [0.95, 0.50]
     in_direction: "top_to_bottom"
 
+analysis:
+  # Zero-config fallback: with no zones configured above, divide the frame into
+  # this many full-width horizontal bands by relative Y (near -> far).
+  auto_band_count: 3
+
 # Polygons tinted on the annotated output. Rendering arrives in Phase 4; the
 # features that *reason* about zones (area profiling, zone headcounts) are
 # Phase 5. kind selects the tint: generic | queue | sales | safe_occupancy |

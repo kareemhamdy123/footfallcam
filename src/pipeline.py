@@ -18,6 +18,7 @@ import numpy as np
 
 from .config import Config
 from .detection.model import PersonDetector
+from .geometry import auto_bands
 from .tracking.tracker import SimpleTracker
 from .video_io import (
     convert_to_h264_web,
@@ -31,6 +32,8 @@ from .video_io import (
 from features.counter import VideoCounter
 from features.gender import DemographicsAggregator, GenderClassifier
 from features.playback import PlaybackEngine
+from features.area_profiling import AreaProfiler
+from features.zone_counting import ZoneCounter
 
 ANNOTATED_NAME = "annotated.mp4"
 REPORT_NAME = "report.json"
@@ -86,6 +89,21 @@ class Pipeline:
                 source_label=os.path.basename(source),
             )
 
+            # Characteristics 5 and 17 reason over the same zones. Resolved
+            # once here so both features and the overlay agree exactly, and so
+            # the profiler can still report that it is running in auto mode.
+            configured_zones = cfg.scaled_zones(width, height)
+            using_auto_bands = not configured_zones
+            analysis_zones = configured_zones or auto_bands(
+                width, height, cfg.analysis.auto_band_count
+            )
+            profiler = AreaProfiler(
+                analysis_zones,
+                frame_shape=(width, height),
+                auto_mode=using_auto_bands,
+            )
+            zone_counter = ZoneCounter(analysis_zones, frame_shape=(width, height))
+
             started = time.time()
             frame_idx = 0
             active_tracks: list = []
@@ -104,6 +122,9 @@ class Pipeline:
                             frame, active_tracks, gender_classifier,
                             demographics, cfg.demographics,
                         )
+                    dt_s = 1.0 / info["fps"] if info["fps"] else 0.0
+                    profiler.update(active_tracks, dt_s)
+                    zone_counter.update(active_tracks)
                     annotated = playback.render_proof_frame(
                         frame,
                         active_tracks,
@@ -144,6 +165,8 @@ class Pipeline:
             },
             "counting": counter.summary(),
             "demographics": demographics.summary(),
+            "area_profiling": profiler.summary(),
+            "zone_counting": zone_counter.summary(),
         }
 
         report_path = os.path.join(cfg.output_dir, REPORT_NAME)
