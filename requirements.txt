@@ -1,7 +1,12 @@
+# Core Deep Learning & Computer Vision
 ultralytics>=8.2.0
 opencv-python>=4.9.0
 numpy>=1.26.0
 PyYAML>=6.0.1
 
-# Optional, only needed if you enable gender recognition (analytics/demographics.py)
-# onnxruntime>=1.17.0
+# Hardware-Accelerated ONNX Runtime (DirectML GPU on Windows / CPU elsewhere)
+onnxruntime-directml>=1.17.0; sys_platform == 'win32'
+onnxruntime>=1.17.0; sys_platform != 'win32'
+
+# Automated Testing
+pytest>=8.0.0

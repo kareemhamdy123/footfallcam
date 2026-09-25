@@ -1,0 +1,48 @@
+# FootfallCam-CV default configuration.
+#
+# This file is the single source of truth for every tunable (R3).
+# Code must never hardcode coordinates, thresholds or model paths.
+#
+# Coordinate convention: every point is NORMALISED to 0.0-1.0 and scaled to
+# the frame resolution at runtime, so one config works at any video size.
+
+source: "data/sample.mp4"
+output_dir: "outputs"
+
+detection:
+  model_path: "yolov8n.onnx"
+  confidence: 0.45
+  device: "gpu"            # "gpu" (DirectML/CUDA auto) | "cpu"
+  person_class_id: 0
+  input_size: 640          # letterbox square edge; must match the ONNX export
+  nms_iou: 0.45
+  # Geometric sanity filters - reject noise, poles and counter-edge strips.
+  sanity:
+    min_box_width_px: 12
+    min_box_height_px: 16
+    min_height_over_width: 0.30
+    min_width_over_height: 0.15
+    max_frame_fraction: 0.95
+
+tracking:
+  iou_threshold: 0.30
+  high_confidence_threshold: 0.45
+  min_hits: 2               # a track needs 2 matched frames to be confirmed
+  max_missed: 30            # frames a track survives without a detection
+  max_center_distance_px: 90
+  max_occlusion_bridge: 2   # frames a confirmed track is carried on prediction
+  box_ema_alpha: 0.70       # bounding-box smoothing
+  velocity_ema_alpha: 0.60  # velocity smoothing
+  max_history: 300          # retained foot-point trail length
+
+behaviour:
+  dwell_alert_seconds: 60
+  safe_occupancy_limit: 30
+  queue_min_people: 2
+  queue_max_gap_px: 120
+
+lines:
+  - name: "main_entrance"
+    p1: [0.05, 0.50]
+    p2: [0.95, 0.50]
+    in_direction: "top_to_bottom"

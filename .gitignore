@@ -4,6 +4,12 @@ __pycache__/
 venv/
 .pytest_cache/
 
+# local planning docs, agent rules and the brochure PDF - not part of the deliverable
+/.agents/
+/AGENTS.md
+/REFACTOR_PLAN.md
+/files/
+
 # generated outputs / weights / large media - keep the repo lightweight
 outputs/*
 !outputs/.gitkeep
