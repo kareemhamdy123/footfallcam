@@ -111,8 +111,12 @@ straddled the line's *infinite* extension, and a second sign test on the line's
 endpoints proves the intersection falls *between* them. Without that second
 test, someone walking past the end of a short gate segment is still counted.
 
-`features/` is intentionally empty until Phase 2. `src/counting.py` is Phase 0
-scaffolding and is replaced by `features/counter.py` there.
+Each brochure characteristic gets one module in `features/` with one class,
+re-exported from `features/__init__.py`. Feature modules receive `list[Track]`,
+`dict[track_id → Detection]`, `frame_shape`, `timestamp_s` and `config` only —
+they import `Track` and `Line` under `if TYPE_CHECKING:` so the runtime
+dependency stays one-directional. `src/visualizer.py` sits below `features/` and
+is a pure drawing toolkit: it renders what it is handed and decides nothing.
 
 ---
 
