@@ -5,9 +5,9 @@ tracking → geometry → features**, wired together by a single pipeline.
 
 The target is the FootfallCam `3D PRO 2` / `3D Extend` brochure's 20
 characteristics. The CV backbone that makes all 20 possible is complete; the
-feature modules are being added one phase at a time. **Implemented so far:
-1 (Video Counting), 13 (Multiple counting lines), the counting subset of 14
-(Group counting), and 6 (Gender recognition) — the remaining 16 are not.**
+feature modules are being added one phase at a time. **Implemented so far: 1 (Video Counting), 4 (Playback / video proof), 6 (Gender
+recognition), 13 (Multiple counting lines) and the counting subset of 14 (Group
+counting) — the remaining 15 are not.**
 
 > This repo is mid-refactor. The previous 20-feature implementation is preserved
 > on the `legacy/sprawling-implementation` branch; `main` is the rebuilt,
@@ -91,12 +91,13 @@ src/detection/                  src/tracking/
    letterbox + NMS + dedup         + centroid-distance fallback
    geometric sanity filters        EMA smoothing, velocity prediction
    ▼                                ▼
-   └──────────► src/counting.py ◄──┘
-                  LineCounter
-                  bi-directional crossing tally
+   └──────────► features/ ◄────────┘
+                  counter.VideoCounter      (characteristic 1)
+                  playback.PlaybackEngine   (characteristic 4)
                         │
                         ▼
               src/visualizer.py  →  outputs/annotated.mp4
+              (drawing toolkit: zones, lines, boxes, trails, HUD)
 ```
 
 **Layer boundaries are hard.** `detection/`, `tracking/` and `geometry/` never
@@ -149,7 +150,7 @@ floor. Do not rebalance the heuristic's midpoints to force output.
 python -m pytest tests/ -v
 ```
 
-168 tests, ~2.5 s. Logic tests need neither a video nor a model; the tests that
+203 tests, ~2.7 s. Logic tests need neither a video nor a model; the tests that
 do need one skip cleanly when `data/sample.mp4` or `ffmpeg` is absent, and none
 of them touch the network.
 
@@ -164,6 +165,7 @@ of them touch the network.
 | `test_group_counting.py` | Co-movement accumulation, transitive entry clustering, configurable windows |
 | `test_gender_classifier.py` | Label contract, unusable crops, cue extraction, cue agreement, backend precedence, determinism — mostly pinning the paths that answer "unknown" |
 | `test_demographics_aggregator.py` | Idempotent per-person recording, percentages over the classified population, unknown handling |
+| `test_playback_and_visualizer.py` | Frame is never mutated, role colours, trails, lines, zone tints, raw-detection preference, HUD fields, and that an unwired KPI renders as `n/a` rather than `0` |
 | `test_video_io.py` | File/webcam/URL source rules, stream info and FPS fallback, writer round-trip, H.264 transcode verification |
 
 Two infrastructure files are load-bearing: `pytest.ini` pins the project root
