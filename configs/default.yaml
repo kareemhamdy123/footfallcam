@@ -56,6 +56,24 @@ counting:
     passerby_margin_fraction: 0.10
     passerby_max_seconds: 3.2
 
+# Brochure characteristic 6.
+#
+# OFF BY DEFAULT, deliberately. Inferring gender from a low-resolution
+# surveillance crop of a stranger is unreliable and carries real privacy and
+# bias consequences; the model-less fallback is a weak multi-cue guess, not
+# evidence. Enable it only with a trained model, only where lawful, and only
+# if you have validated it on your own floor. See the ethics section of the
+# README before switching this on.
+demographics:
+  enabled: false
+  model_path: null          # ONNX model; null uses the heuristic fallback
+  min_hits: 3               # do not classify a track before it is this settled
+  # Heuristic only: below this agreement between cues the answer is "unknown"
+  # rather than a coin flip. 0.60 makes the model-less fallback abstain on
+  # essentially every real crop, which is the intended behaviour - see the
+  # measured table at the top of features/gender.py before lowering it.
+  heuristic_min_confidence: 0.60
+
 lines:
   - name: "main_entrance"
     p1: [0.05, 0.50]

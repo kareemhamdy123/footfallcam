@@ -5,8 +5,9 @@ tracking → geometry → features**, wired together by a single pipeline.
 
 The target is the FootfallCam `3D PRO 2` / `3D Extend` brochure's 20
 characteristics. The CV backbone that makes all 20 possible is complete; the
-feature modules are being added one phase at a time. **Only characteristic 1
-(counting) is implemented so far — the other 19 are not.**
+feature modules are being added one phase at a time. **Implemented so far:
+1 (Video Counting), 13 (Multiple counting lines), the counting subset of 14
+(Group counting), and 6 (Gender recognition) — the remaining 16 are not.**
 
 > This repo is mid-refactor. The previous 20-feature implementation is preserved
 > on the `legacy/sprawling-implementation` branch; `main` is the rebuilt,
@@ -114,13 +115,41 @@ scaffolding and is replaced by `features/counter.py` there.
 
 ---
 
+## Gender recognition is off by default
+
+Characteristic 6 exists, but `demographics.enabled: false` in
+`configs/default.yaml` and you should think hard before flipping it.
+
+With no model supplied, the classifier falls back to a three-cue heuristic
+(Sobel edge energy, HSV saturation, aspect ratio). Measured on the sample store
+footage, sweeping its confidence threshold:
+
+| threshold | male | female | unknown |
+|---|---|---|---|
+| 0.00 | 2999 | 543 | 0 |
+| 0.20 | 2344 | 20 | 1178 |
+| 0.40 | 175 | 0 | 3367 |
+| **0.60** (default) | **0** | **0** | **3542** |
+
+Nothing is ever confidently "female", and at the permissive end the split is
+~85% male — which is the heuristic's own bias, not a measurement of anything.
+Lowering the threshold reveals bias rather than signal.
+
+So at the shipped default the fallback abstains on every real crop. That is the
+intended behaviour, not a bug: a guess about a stranger's gender made from a
+~90×57 pixel crop should not be asserted. If you need real demographics,
+supply a trained model via `demographics.model_path` and validate it on your own
+floor. Do not rebalance the heuristic's midpoints to force output.
+
+---
+
 ## Tests
 
 ```bash
 python -m pytest tests/ -v
 ```
 
-69 tests, ~2.4 s. Logic tests need neither a video nor a model; the tests that
+168 tests, ~2.5 s. Logic tests need neither a video nor a model; the tests that
 do need one skip cleanly when `data/sample.mp4` or `ffmpeg` is absent, and none
 of them touch the network.
 
@@ -129,6 +158,12 @@ of them touch the network.
 | `test_counting_and_geometry.py` | Crossing in/out, parallel motion, finite-segment rejection (R8), bi-directional tally, staff exclusion, polygon containment |
 | `test_detection_model.py` | Letterbox round-trip, minimum-size and aspect filters, oversize rejection, both YOLO output layouts, partial-body dedup |
 | `test_tracker_association.py` | IoU matching, low-confidence occlusion recovery, min-hits confirmation, max-missed deletion, EMA damping, nearest-track matching, no double assignment |
+| `test_multiple_lines.py` | Independent per-gate tallies, one count per line per track, forgotten-and-returned tracks |
+| `test_auto_mode_counting.py` | Entry on appearance, exit behind the debounce, dropout that is not an exit, passerby classification |
+| `test_counter_delegation.py` | Delegation enforced by substituting stub delegates and requiring the counter's output to follow them, plus an AST check that it never imports the geometry primitive |
+| `test_group_counting.py` | Co-movement accumulation, transitive entry clustering, configurable windows |
+| `test_gender_classifier.py` | Label contract, unusable crops, cue extraction, cue agreement, backend precedence, determinism — mostly pinning the paths that answer "unknown" |
+| `test_demographics_aggregator.py` | Idempotent per-person recording, percentages over the classified population, unknown handling |
 | `test_video_io.py` | File/webcam/URL source rules, stream info and FPS fallback, writer round-trip, H.264 transcode verification |
 
 Two infrastructure files are load-bearing: `pytest.ini` pins the project root

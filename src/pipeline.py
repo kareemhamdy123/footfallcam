@@ -14,6 +14,7 @@ import time
 from datetime import datetime, timezone
 
 import cv2
+import numpy as np
 
 from .config import Config
 from .detection.model import PersonDetector
@@ -30,6 +31,7 @@ from .visualizer import annotate_frame
 
 # Features live outside src/ and are imported by their public name only.
 from features.counter import VideoCounter
+from features.gender import DemographicsAggregator, GenderClassifier
 
 ANNOTATED_NAME = "annotated.mp4"
 REPORT_NAME = "report.json"
@@ -67,6 +69,15 @@ class Pipeline:
                 passerby_max_seconds=cfg.counting.auto_mode.passerby_max_seconds,
             )
 
+            # Characteristic 6 is opt-in; see features/gender.py for why.
+            demographics = DemographicsAggregator()
+            gender_classifier = None
+            if cfg.demographics.enabled:
+                gender_classifier = GenderClassifier(
+                    model_path=cfg.demographics.model_path,
+                    min_confidence=cfg.demographics.heuristic_min_confidence,
+                )
+
             annotated_path = os.path.join(cfg.output_dir, ANNOTATED_NAME)
             writer = make_writer(annotated_path, info["fps"], (width, height))
 
@@ -82,6 +93,11 @@ class Pipeline:
                     active_tracks = _process_frame(
                         frame, frame_idx, info["fps"], detector, tracker, counter
                     )
+                    if gender_classifier is not None:
+                        _classify_demographics(
+                            frame, active_tracks, gender_classifier,
+                            demographics, cfg.demographics,
+                        )
                     annotated = annotate_frame(frame, active_tracks)
                     writer.write(annotated)
 
@@ -115,6 +131,7 @@ class Pipeline:
                 "total_tracks_opened": tracker.total_opened,
             },
             "counting": counter.summary(),
+            "demographics": demographics.summary(),
         }
 
         report_path = os.path.join(cfg.output_dir, REPORT_NAME)
@@ -129,6 +146,38 @@ class Pipeline:
         )
         print(f"[pipeline] wrote {annotated_path} and {report_path}")
         return report
+
+
+def _classify_demographics(
+    frame,
+    tracks: list,
+    classifier: GenderClassifier,
+    aggregator: DemographicsAggregator,
+    settings,
+) -> None:
+    """Classify each settled, not-yet-classified track once (characteristic 6).
+
+    Gated on `hits >= min_hits` so a person's label is not decided from the
+    first two frames, when the box is still settling onto them.
+    """
+    for track in tracks:
+        if track.gender is not None or track.hits < settings.min_hits:
+            continue
+        crop = _person_crop(frame, track)
+        label, _confidence = classifier.classify(crop)
+        track.gender = label
+        aggregator.record_track(track)
+
+
+def _person_crop(frame, track) -> np.ndarray | None:
+    """The pixels of the track's box, clipped to the frame."""
+    height, width = frame.shape[:2]
+    x1, y1, x2, y2 = (int(v) for v in track.box)
+    x1, x2 = max(0, x1), min(width, x2)
+    y1, y2 = max(0, y1), min(height, y2)
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return frame[y1:y2, x1:x2]
 
 
 def _process_frame(
