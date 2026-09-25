@@ -27,11 +27,10 @@ from .video_io import (
     open_source,
     read_frame,
 )
-from .visualizer import annotate_frame
-
 # Features live outside src/ and are imported by their public name only.
 from features.counter import VideoCounter
 from features.gender import DemographicsAggregator, GenderClassifier
+from features.playback import PlaybackEngine
 
 ANNOTATED_NAME = "annotated.mp4"
 REPORT_NAME = "report.json"
@@ -81,6 +80,12 @@ class Pipeline:
             annotated_path = os.path.join(cfg.output_dir, ANNOTATED_NAME)
             writer = make_writer(annotated_path, info["fps"], (width, height))
 
+            playback = PlaybackEngine(
+                lines=cfg.scaled_lines(width, height),
+                zones=cfg.scaled_zones(width, height),
+                source_label=os.path.basename(source),
+            )
+
             started = time.time()
             frame_idx = 0
             active_tracks: list = []
@@ -90,15 +95,22 @@ class Pipeline:
                     if not ok:
                         break
 
-                    active_tracks = _process_frame(
+                    frame_detections = _process_frame(
                         frame, frame_idx, info["fps"], detector, tracker, counter
                     )
+                    active_tracks, detections = frame_detections
                     if gender_classifier is not None:
                         _classify_demographics(
                             frame, active_tracks, gender_classifier,
                             demographics, cfg.demographics,
                         )
-                    annotated = annotate_frame(frame, active_tracks)
+                    annotated = playback.render_proof_frame(
+                        frame,
+                        active_tracks,
+                        detections_by_id=_detections_by_id(detections, active_tracks),
+                        counts_summary=counter.summary(),
+                        kpis={"demo": _demo_kpi(demographics)},
+                    )
                     writer.write(annotated)
 
                     if show and cv2.waitKey(1) & 0xFF == ord("q"):
@@ -148,6 +160,41 @@ class Pipeline:
         return report
 
 
+def _demo_kpi(aggregator: DemographicsAggregator) -> str | None:
+    """The DEMO (M/F) HUD field, or None while nothing has been classified."""
+    summary = aggregator.summary()
+    if not summary["total_classified"]:
+        return None
+    return (
+        f"{summary['male_percentage']}% / {summary['female_percentage']}%"
+    )
+
+
+def _detections_by_id(detections: list, tracks: list) -> dict:
+    """Match this frame's raw detections to the tracks they produced.
+
+    A proof frame should show the box the model actually returned, so the
+    drawing prefers the detection over the tracker's smoothed box. A track that
+    was bridged across an occlusion has no fresh detection and is simply
+    absent from the mapping.
+    """
+    if not detections or not tracks:
+        return {}
+    mapping = {}
+    for track in tracks:
+        # Nearest detection to the track's own box, by centroid distance.
+        tx, ty = track.detection.centroid
+        best, best_distance = None, float("inf")
+        for detection in detections:
+            dx, dy = detection.centroid
+            distance = abs(dx - tx) + abs(dy - ty)
+            if distance < best_distance:
+                best, best_distance = detection, distance
+        if best is not None:
+            mapping[track.track_id] = best
+    return mapping
+
+
 def _classify_demographics(
     frame,
     tracks: list,
@@ -188,9 +235,13 @@ def _process_frame(
     tracker: SimpleTracker,
     counter: VideoCounter,
 ):
-    """enhance -> detect -> track -> count for one frame."""
+    """enhance -> detect -> track -> count for one frame.
+
+    Returns `(tracks, detections)`; the detections are kept for the proof frame.
+    """
     enhanced = enhance_frame(frame)
     timestamp_s = frame_idx / fps if fps else 0.0
-    tracks = tracker.update(detector.detect(enhanced), frame_idx)
+    detections = detector.detect(enhanced)
+    tracks = tracker.update(detections, frame_idx)
     counter.update(tracks, frame_idx, timestamp_s)
-    return tracks
+    return tracks, detections

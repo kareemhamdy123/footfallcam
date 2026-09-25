@@ -128,10 +128,15 @@ class Config:
     counting: CountingSettings
     demographics: DemographicsSettings
     lines: list[Line] = dataclasses.field(default_factory=list)
+    zones: list[Zone] = dataclasses.field(default_factory=list)
 
     def scaled_lines(self, width: int, height: int) -> list[Line]:
         """Resolve every configured line against a frame size (R3)."""
         return [line.scaled(width, height) for line in self.lines]
+
+    def scaled_zones(self, width: int, height: int) -> list[Zone]:
+        """Resolve every configured zone against a frame size (R3)."""
+        return [zone.scaled(width, height) for zone in self.zones]
 
     @staticmethod
     def load(path: str | Path) -> "Config":
@@ -147,7 +152,16 @@ class Config:
             counting=_counting_from(raw.get("counting") or {}),
             demographics=_demographics_from(raw.get("demographics") or {}),
             lines=[_line_from(entry) for entry in (raw.get("lines") or [])],
+            zones=[_zone_from(entry) for entry in (raw.get("zones") or [])],
         )
+
+
+def _zone_from(entry: dict[str, Any]) -> Zone:
+    return Zone(
+        name=str(entry["name"]),
+        polygon=[(float(pt[0]), float(pt[1])) for pt in entry["polygon"]],
+        kind=str(entry.get("kind", "generic")),
+    )
 
 
 def _line_from(entry: dict[str, Any]) -> Line:

@@ -79,3 +79,15 @@ lines:
     p1: [0.05, 0.50]
     p2: [0.95, 0.50]
     in_direction: "top_to_bottom"
+
+# Polygons tinted on the annotated output. Rendering arrives in Phase 4; the
+# features that *reason* about zones (area profiling, zone headcounts) are
+# Phase 5. kind selects the tint: generic | queue | sales | safe_occupancy |
+# outside.
+zones:
+  - name: "sales_floor"
+    kind: "sales"
+    polygon: [[0.30, 0.05], [0.72, 0.05], [0.72, 0.45], [0.30, 0.45]]
+  - name: "entrance_lane"
+    kind: "queue"
+    polygon: [[0.02, 0.55], [0.30, 0.55], [0.30, 0.98], [0.02, 0.98]]
