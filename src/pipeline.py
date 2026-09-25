@@ -16,7 +16,6 @@ from datetime import datetime, timezone
 import cv2
 
 from .config import Config
-from .counting import LineCounter
 from .detection.model import PersonDetector
 from .tracking.tracker import SimpleTracker
 from .video_io import (
@@ -28,6 +27,9 @@ from .video_io import (
     read_frame,
 )
 from .visualizer import annotate_frame
+
+# Features live outside src/ and are imported by their public name only.
+from features.counter import VideoCounter
 
 ANNOTATED_NAME = "annotated.mp4"
 REPORT_NAME = "report.json"
@@ -54,7 +56,16 @@ class Pipeline:
 
             detector = PersonDetector(cfg.detection)
             tracker = SimpleTracker(cfg.tracking)
-            counter = LineCounter(cfg.scaled_lines(width, height))
+            width, height = info["width"], info["height"]
+            counter = VideoCounter(
+                lines=cfg.scaled_lines(width, height),
+                group_max_distance_px=cfg.counting.group_max_distance_px,
+                frame_shape=(width, height),
+                group_entry_window_s=cfg.counting.group_entry_window_s,
+                missing_frame_debounce=cfg.counting.auto_mode.missing_frame_debounce,
+                passerby_margin_fraction=cfg.counting.auto_mode.passerby_margin_fraction,
+                passerby_max_seconds=cfg.counting.auto_mode.passerby_max_seconds,
+            )
 
             annotated_path = os.path.join(cfg.output_dir, ANNOTATED_NAME)
             writer = make_writer(annotated_path, info["fps"], (width, height))
@@ -126,7 +137,7 @@ def _process_frame(
     fps: float,
     detector: PersonDetector,
     tracker: SimpleTracker,
-    counter: LineCounter,
+    counter: VideoCounter,
 ):
     """enhance -> detect -> track -> count for one frame."""
     enhanced = enhance_frame(frame)

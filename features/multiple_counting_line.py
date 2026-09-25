@@ -1,35 +1,28 @@
-"""Phase 0 counting skeleton.
+"""Feature 13: Multiple counting lines.
 
-SCOPE NOTE: deliberately minimal scaffolding, so Phase 0 can emit real
-`counting.total_in` / `total_out` / `net_inside` numbers. It implements one
-responsibility only - bi-directional crossing of a finite line segment, once
-per line per track, excluding staff.
+Owns every multi-gate concern for counting: a per-line tally, the previous
+foot point needed to detect a crossing, and per-line idempotency via
+`track.counted_lines`. Brochure characteristic 13 ("Multiple counting line").
 
-Phase 2 replaces this module with `features/counter.py` (VideoCounter),
-`features/multiple_counting_line.py` (MultipleCountingLineManager) and
-`features/group_counting.py` (GroupCounter), then deletes this file. Do not grow
-it: multi-gate management, auto / scene-flow mode and group clustering belong
-to the Phase 2 feature modules (R2, R7).
-
-It sits under `src/` rather than `features/` only because `features/` must stay
-empty until Phase 2. `Track` is imported for typing only, which is the pattern
-`features/` must follow (R1).
+This is a primitive. It counts whatever tracks it is handed and applies no
+policy about *who* counts - excluding staff is `VideoCounter`'s job, not this
+module's. Keeping that split is what stops the two from drifting apart (R7).
 """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Sequence
 
-from .geometry.zones import crossed_line
+from src.geometry.zones import crossed_line
 
-if TYPE_CHECKING:  # pragma: no cover - typing only, keeps the layer decoupled
-    from .config import Line
-    from .tracking.dataclasses import Track
+if TYPE_CHECKING:  # pragma: no cover - typing only (R1)
+    from src.config import Line
+    from src.tracking.dataclasses import Track
 
 Point = tuple[float, float]
 
 
-class LineCounter:
-    """Bi-directional crossing tally over one or more finite line segments."""
+class MultipleCountingLineManager:
+    """Independent bi-directional tallies, one per configured line segment."""
 
     def __init__(self, lines: Sequence["Line"], stale_after_frames: int = 30):
         self.lines = list(lines)
@@ -40,8 +33,8 @@ class LineCounter:
         self.events: list[dict] = []
 
         # Foot point seen on the previous frame, per track. Held here rather
-        # than read from Track.history, so crossing detection stays correct
-        # for a track that was bridged across an occlusion.
+        # than read from Track.history, so a track bridged across an occlusion
+        # still has a valid "previous" position to compare against.
         self._last_position: dict[int, Point] = {}
         self._missing_frames: dict[int, int] = {}
 
@@ -51,28 +44,26 @@ class LineCounter:
         frame_idx: int,
         timestamp_s: float,
     ) -> list[dict]:
-        """Tally this frame's crossings. Returns only the new events."""
+        """Tally crossings for this frame. Returns only the new events."""
         new_events: list[dict] = []
         present: set[int] = set()
 
         for track in tracks:
             present.add(track.track_id)
             self._missing_frames.pop(track.track_id, None)
+
             position = track.foot_point
             previous = self._last_position.get(track.track_id)
             self._last_position[track.track_id] = position
+            if previous is None:
+                continue  # first sighting: no movement to judge yet
 
-            if previous is None or track.is_staff:
-                # No movement to judge yet, or staff never affect the
-                # customer footfall tally.
-                continue
-
-            new_events += self._count_crossings(track, previous, position, frame_idx, timestamp_s)
+            new_events += self._count_lines(track, previous, position, frame_idx, timestamp_s)
 
         self._forget_absent_tracks(present)
         return new_events
 
-    def _count_crossings(
+    def _count_lines(
         self,
         track: "Track",
         previous: Point,
@@ -83,7 +74,7 @@ class LineCounter:
         events: list[dict] = []
         for line in self.lines:
             if line.name in track.counted_lines:
-                continue  # idempotent per line (R7)
+                continue  # one count per line per track, ever (R7)
             direction = crossed_line(previous, position, line)
             if direction is None:
                 continue
@@ -106,16 +97,27 @@ class LineCounter:
 
     def _forget_absent_tracks(self, present: set[int]) -> None:
         """Drop tracks gone long enough that their return is a new visit."""
-        for track_id in self._last_position.keys() - present:
+        for track_id in list(self._last_position):
+            if track_id in present:
+                continue
             misses = self._missing_frames.get(track_id, 0) + 1
             self._missing_frames[track_id] = misses
             if misses > self.stale_after_frames:
                 del self._last_position[track_id]
                 del self._missing_frames[track_id]
 
+    def reset(self) -> None:
+        """Clear all tallies, events and per-track memory."""
+        for tally in self.counts.values():
+            tally["in"] = 0
+            tally["out"] = 0
+        self.events.clear()
+        self._last_position.clear()
+        self._missing_frames.clear()
+
     def summary(self) -> dict:
-        total_in = sum(c["in"] for c in self.counts.values())
-        total_out = sum(c["out"] for c in self.counts.values())
+        total_in = sum(t["in"] for t in self.counts.values())
+        total_out = sum(t["out"] for t in self.counts.values())
         return {
             "per_line": self.counts,
             "total_in": total_in,

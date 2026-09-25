@@ -1,10 +1,10 @@
-"""Geometry predicates and the Phase 0 crossing tally.
+"""Geometry predicates and the counting tally.
 
 No video, no model, no OpenCV: everything is driven by the factories in
 `conftest.py` (R4).
 """
+from features.counter import VideoCounter
 from src.config import Line, Zone
-from src.counting import LineCounter
 from src.geometry.zones import crossed_line, point_in_polygon, zones_containing
 from tests.conftest import make_track
 
@@ -72,11 +72,12 @@ def _walk(counter, track_id, y, frame_idx, is_staff=False):
         [make_track(track_id, x=300, y=y, is_staff=is_staff)],
         frame_idx,
         frame_idx / 30.0,
+        frame_shape=(640, 360),
     )
 
 
 def test_counter_tallies_bi_directionally_and_nets_out():
-    counter = LineCounter([GATE])
+    counter = VideoCounter(lines=[GATE], frame_shape=(640, 360))
 
     _walk(counter, 1, y=100, frame_idx=0)  # first sighting: no movement yet
     _walk(counter, 1, y=250, frame_idx=1)  # crosses downwards -> IN
@@ -89,7 +90,7 @@ def test_counter_tallies_bi_directionally_and_nets_out():
 
 
 def test_counter_is_idempotent_per_line_and_keeps_net_inside():
-    counter = LineCounter([GATE])
+    counter = VideoCounter(lines=[GATE], frame_shape=(640, 360))
 
     _walk(counter, 7, y=100, frame_idx=0)
     for frame_idx, y in enumerate([150, 250, 300], start=1):
@@ -101,7 +102,7 @@ def test_counter_is_idempotent_per_line_and_keeps_net_inside():
 
 
 def test_counter_excludes_staff():
-    counter = LineCounter([GATE])
+    counter = VideoCounter(lines=[GATE], frame_shape=(640, 360))
 
     _walk(counter, 3, y=100, frame_idx=0, is_staff=True)
     _walk(counter, 3, y=250, frame_idx=1, is_staff=True)
@@ -111,11 +112,26 @@ def test_counter_excludes_staff():
 
 
 def test_counter_ignores_crossings_outside_the_segment():
-    counter = LineCounter([GATE])  # the gate spans x = 32 .. 608
+    counter = VideoCounter(lines=[GATE], frame_shape=(640, 360))
+    # the gate spans x = 32 .. 608
 
-    counter.update([make_track(1, x=100, y=100)], 0, 0.0)
-    counter.update([make_track(1, x=100, y=250)], 1, 1 / 30.0)  # inside the span
-    counter.update([make_track(2, x=625, y=100)], 2, 2 / 30.0)
-    counter.update([make_track(2, x=625, y=250)], 3, 3 / 30.0)  # past p2 = 608
+    counter.update([make_track(1, x=100, y=100)], 0, 0.0, (640, 360))
+    counter.update([make_track(1, x=100, y=250)], 1, 1 / 30.0, (640, 360))
+    counter.update([make_track(2, x=625, y=100)], 2, 2 / 30.0, (640, 360))
+    counter.update([make_track(2, x=625, y=250)], 3, 3 / 30.0, (640, 360))
 
     assert counter.summary()["total_in"] == 1
+
+
+def test_scaling_a_normalised_line_resolves_it_against_the_frame():
+    """R3: coordinates live in config, normalised, not in code."""
+    normalised = Line("door", (0.05, 0.5), (0.95, 0.5), "top_to_bottom")
+    resolved = normalised.scaled(640, 360)
+
+    assert resolved.p1 == (32, 180)
+    assert resolved.p2 == (608, 180)
+    assert normalised.p1 == (0.05, 0.5), "scaling must not mutate the config"
+
+    # A line resolved this way behaves identically to the literal one above.
+    assert crossed_line((300, 100), (300, 250), resolved) == "in"
+    assert crossed_line((300, 250), (300, 100), resolved) == "out"

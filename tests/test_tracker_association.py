@@ -7,7 +7,6 @@ long enough to be interesting.
 No model, no video: the tracker is driven by synthetic `Detection` lists
 (R4).
 """
-import numpy as np
 import pytest
 
 from src.config import TrackingSettings

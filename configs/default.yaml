@@ -41,6 +41,21 @@ behaviour:
   queue_min_people: 2
   queue_max_gap_px: 120
 
+counting:
+  # Co-movement clustering radius for GroupCounter.
+  group_max_distance_px: 90
+  # Group entry events closer together in time than this are one purchasing unit.
+  group_entry_window_s: 3.0
+  # Auto mode (used when no lines are configured): a track that vanishes is
+  # only counted OUT after this many consecutive missing frames, so a brief
+  # detection dropout is not mistaken for an exit.
+  auto_mode:
+    missing_frame_debounce: 8
+    # A track that both appeared and vanished inside the frame border margin
+    # and stayed shorter than this is treated as a passerby, not a visitor.
+    passerby_margin_fraction: 0.10
+    passerby_max_seconds: 3.2
+
 lines:
   - name: "main_entrance"
     p1: [0.05, 0.50]
