@@ -106,7 +106,9 @@ class SimpleTracker:
                 del self.tracks[track_ids[i]]
 
         # Open new tracks for unmatched *confident* detections only: a lone weak
-        # box is usually a partial body, not a person.
+        # box is usually a partial body, not a person. hits starts at 1 because
+        # the creating detection is itself an observation - otherwise min_hits=2
+        # would need three frames to confirm.
         for j, det in enumerate(high):
             if j in used_high:
                 continue
@@ -114,6 +116,8 @@ class SimpleTracker:
             self.tracks[new_id] = Track(
                 track_id=new_id,
                 detection=det,
+                age=1,
+                hits=1,
                 first_seen_frame=frame_idx,
                 last_seen_frame=frame_idx,
                 history=[(frame_idx, det.foot_point[0], det.foot_point[1])],
