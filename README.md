@@ -5,9 +5,35 @@ tracking → geometry → features**, wired together by a single pipeline.
 
 The target is the FootfallCam `3D PRO 2` / `3D Extend` brochure's 20
 characteristics. The CV backbone that makes all 20 possible is complete; the
-feature modules are being added one phase at a time. **Implemented so far: 1 (Video Counting), 4 (Playback / video proof), 6 (Gender
-recognition), 13 (Multiple counting lines), 17 (Zone counting), the counting
-subset of 14 (Group counting) and 5 (Area profiling) — the remaining 14 are not.**
+feature modules are being added one phase at a time. **5 characteristics are
+done, 2 are partial, 13 have not started.**
+
+| # | Characteristic | Phase | State |
+|---|---|---|---|
+| 1 | Video Counting | 2 | **done** — `features/counter.py` |
+| 2 | Dynamic Queue Counting | 6 | not started |
+| 3 | Passenger Queue | 6 | not started |
+| 4 | Playback | 4 | **done** — `features/playback.py` |
+| 5 | Area Profiling | 5 | **done** — `features/area_profiling.py` |
+| 6 | Gender recognition | 3 | **partial** — complete, but opt-in and **off by default** |
+| 7 | Metrics measures | 9 | not started |
+| 8 | Outside traffic | 7 | not started |
+| 9 | Turn in rate | 7 | not started |
+| 10 | Sales conversation | 10 | not started |
+| 11 | Object clarification | 11 | not started |
+| 12 | Staff exclusion | 10 | not started — `Track.is_staff` exists, nothing sets it yet |
+| 13 | Multiple counting line | 2 | **done** — `features/multiple_counting_line.py` |
+| 14 | Group counting | 2, 12 | **partial** — Phase 2 subset; Phase 12 completes it |
+| 15 | Safe occupancy | 13 | not started |
+| 16 | Queue prediction | 6 | not started |
+| 17 | Zone counting | 5 | **done** — `features/zone_counting.py` |
+| 18 | Heatmap | 8 | not started |
+| 19 | Night vision mode | 8 | not started |
+| 20 | Visitor in & out dwell time | 14 | not started |
+
+Phases 0–5 are complete and merged into `main`; Phase 6 (queues) is next.
+`outputs/report.json` currently carries `meta`, `tracking`, `counting`,
+`demographics`, `area_profiling` and `zone_counting`.
 
 > This repo is mid-refactor. The previous 20-feature implementation is preserved
 > on the `legacy/sprawling-implementation` branch; `main` is the rebuilt,
