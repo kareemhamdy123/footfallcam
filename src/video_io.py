@@ -29,10 +29,19 @@ H264_ARGS = (
 )
 
 
+def normalise_source(source: str | int) -> str | int:
+    """Resolve a source specifier to what `cv2.VideoCapture` expects.
+
+    A purely numeric string is a camera index; everything else is a file path
+    or a URL and must be passed through untouched. Split out from `open_source`
+    so the rule is unit-testable without opening anything.
+    """
+    return int(source) if str(source).isdigit() else source
+
+
 def open_source(source: str | int) -> cv2.VideoCapture:
-    """Open a video file, a webcam index, or an RTSP/HTTP URL."""
-    src: str | int = int(source) if str(source).isdigit() else source
-    capture = cv2.VideoCapture(src)
+    """Open a video file, a webcam index, or an RTSP/HTTP URL (R5)."""
+    capture = cv2.VideoCapture(normalise_source(source))
     if not capture.isOpened():
         raise IOError(f"Could not open video source: {source}")
     return capture

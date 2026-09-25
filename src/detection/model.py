@@ -121,6 +121,56 @@ def _is_partial_of(
     return x_ratio >= x_overlap_thresh and y_ratio >= y_overlap_thresh
 
 
+def passes_sanity(
+    box_w: float,
+    box_h: float,
+    frame_w: int,
+    frame_h: int,
+    cfg: DetectionSettings,
+) -> bool:
+    """Reject noise, poles and counter-edge strips (config-driven, R3).
+
+    A pure function so the filter is unit-testable without loading a model.
+    """
+    if box_w < cfg.min_box_width_px or box_h < cfg.min_box_height_px:
+        return False
+    if (box_h / max(1.0, box_w)) < cfg.min_height_over_width:
+        return False
+    if (box_w / max(1.0, box_h)) < cfg.min_width_over_height:
+        return False
+    oversized = (
+        box_w > frame_w * cfg.max_frame_fraction
+        and box_h > frame_h * cfg.max_frame_fraction
+    )
+    return not oversized
+
+
+def as_rows(
+    output: np.ndarray, person_class_id: int
+) -> list[tuple[float, float, float, float, float]] | None:
+    """Normalise a raw YOLOv8 output tensor to per-box tuples.
+
+    Accepts either (1, 4+nc, anchors) or an already-transposed
+    (1, anchors, 4+nc), so either export layout survives. A pure function so
+    the layout handling is unit-testable without a model.
+
+    The layout is inferred from the axis lengths, which relies on anchors always
+    outnumbering the 4+nc attribute columns - true of every YOLOv8 export.
+    """
+    arr = np.asarray(output)
+    if arr.ndim == 3:
+        arr = arr[0]
+    if arr.ndim != 2:
+        return None
+    if arr.shape[0] < arr.shape[1]:
+        arr = arr.T  # (4+nc, anchors) -> (anchors, 4+nc)
+
+    return [
+        (float(b[0]), float(b[1]), float(b[2]), float(b[3]), float(s))
+        for b, s in zip(arr[:, :4], arr[:, 4 + person_class_id])
+    ]
+
+
 def _nms(boxes: list[Box], scores: list[float], iou_threshold: float) -> list[int]:
     """Non-maximum suppression. Returns indices into the input lists."""
     xywh = [[int(x), int(y), int(w), int(h)] for x, y, w, h in boxes]
@@ -212,7 +262,7 @@ class PersonDetector:
         blob = np.transpose(rgb.astype(np.float32) / 255.0, (2, 0, 1))[np.newaxis]
 
         output = self.session.run(None, {self._input_name: blob})[0]
-        rows = self._as_rows(output, cfg.person_class_id)
+        rows = as_rows(output, cfg.person_class_id)
         if rows is None:
             return []
 
@@ -224,7 +274,7 @@ class PersonDetector:
             x1, y1, box_w, box_h = unletterbox_box(
                 cx, cy, bw, bh, ratio, pad_x, pad_y
             )
-            if not self._passes_sanity(box_w, box_h, frame_w, frame_h):
+            if not passes_sanity(box_w, box_h, frame_w, frame_h, cfg):
                 continue
             boxes.append((x1, y1, box_w, box_h))
             scores.append(score)
@@ -244,44 +294,6 @@ class PersonDetector:
             for (x, y, w, h), conf in zip(boxes, scores)
         ]
         return [detections[i] for i in _nms(boxes, scores, cfg.nms_iou)]
-
-    def _as_rows(
-        self, output: np.ndarray, person_class_id: int
-    ) -> list[tuple[float, float, float, float, float]] | None:
-        """Normalise a raw YOLOv8 output tensor to per-box tuples.
-
-        Accepts either (1, 4+nc, anchors) or an already-transposed
-        (1, anchors, 4+nc) so either export layout survives.
-        """
-        arr = np.asarray(output)
-        if arr.ndim == 3:
-            arr = arr[0]
-        if arr.ndim != 2:
-            return None
-        if arr.shape[0] < arr.shape[1]:
-            arr = arr.T  # -> (anchors, 4+nc)
-
-        return [
-            (float(b[0]), float(b[1]), float(b[2]), float(b[3]), float(s))
-            for b, s in zip(arr[:, :4], arr[:, 4 + person_class_id])
-        ]
-
-    def _passes_sanity(
-        self, box_w: float, box_h: float, frame_w: int, frame_h: int
-    ) -> bool:
-        """Reject noise, poles and counter-edge strips (config-driven, R3)."""
-        cfg = self.cfg
-        if box_w < cfg.min_box_width_px or box_h < cfg.min_box_height_px:
-            return False
-        if (box_h / max(1.0, box_w)) < cfg.min_height_over_width:
-            return False
-        if (box_w / max(1.0, box_h)) < cfg.min_width_over_height:
-            return False
-        oversized = (
-            box_w > frame_w * cfg.max_frame_fraction
-            and box_h > frame_h * cfg.max_frame_fraction
-        )
-        return not oversized
 
     def _detect_ultralytics(self, frame: np.ndarray) -> list[Detection]:
         results = self._model.predict(
