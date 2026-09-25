@@ -93,12 +93,29 @@ class BehaviourSettings:
 
 
 @dataclasses.dataclass
+class AutoModeSettings:
+    """Zero-config boundary counting, used when no lines are configured."""
+
+    missing_frame_debounce: int = 8
+    passerby_margin_fraction: float = 0.10
+    passerby_max_seconds: float = 3.2
+
+
+@dataclasses.dataclass
+class CountingSettings:
+    group_max_distance_px: float = 90.0
+    group_entry_window_s: float = 3.0
+    auto_mode: AutoModeSettings = dataclasses.field(default_factory=AutoModeSettings)
+
+
+@dataclasses.dataclass
 class Config:
     source: str
     output_dir: str
     detection: DetectionSettings
     tracking: TrackingSettings
     behaviour: BehaviourSettings
+    counting: CountingSettings
     lines: list[Line] = dataclasses.field(default_factory=list)
 
     def scaled_lines(self, width: int, height: int) -> list[Line]:
@@ -116,6 +133,7 @@ class Config:
             detection=_detection_from(raw.get("detection") or {}),
             tracking=_tracking_from(raw.get("tracking") or {}),
             behaviour=_behaviour_from(raw.get("behaviour") or {}),
+            counting=_counting_from(raw.get("counting") or {}),
             lines=[_line_from(entry) for entry in (raw.get("lines") or [])],
         )
 
@@ -166,6 +184,19 @@ def _behaviour_from(b: dict[str, Any]) -> BehaviourSettings:
         safe_occupancy_limit=int(b.get("safe_occupancy_limit", 30)),
         queue_min_people=int(b.get("queue_min_people", 2)),
         queue_max_gap_px=float(b.get("queue_max_gap_px", 120)),
+    )
+
+
+def _counting_from(c: dict[str, Any]) -> CountingSettings:
+    a = c.get("auto_mode") or {}
+    return CountingSettings(
+        group_max_distance_px=float(c.get("group_max_distance_px", 90)),
+        group_entry_window_s=float(c.get("group_entry_window_s", 3.0)),
+        auto_mode=AutoModeSettings(
+            missing_frame_debounce=int(a.get("missing_frame_debounce", 8)),
+            passerby_margin_fraction=float(a.get("passerby_margin_fraction", 0.10)),
+            passerby_max_seconds=float(a.get("passerby_max_seconds", 3.2)),
+        ),
     )
 
 
