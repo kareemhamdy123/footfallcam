@@ -10,15 +10,20 @@ in under `if TYPE_CHECKING:` so the runtime dependency stays one-directional.
 
 Implemented so far:
     characteristic  1  Video Counting        counter.VideoCounter
+    characteristic  6  Gender recognition    gender.GenderClassifier
+                                           gender.DemographicsAggregator
     characteristic 13  Multiple counting line counter.MultipleCountingLineManager
     characteristic 14  Group counting        group_counting.GroupCounter
                        (Phase 2 subset; completed in Phase 12)
 """
 from .counter import LineCounter, VideoCounter
+from .gender import DemographicsAggregator, GenderClassifier
 from .group_counting import GroupCounter
 from .multiple_counting_line import MultipleCountingLineManager
 
 __all__ = [
+    "DemographicsAggregator",
+    "GenderClassifier",
     "GroupCounter",
     "LineCounter",
     "MultipleCountingLineManager",

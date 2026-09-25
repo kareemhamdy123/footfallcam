@@ -109,6 +109,16 @@ class CountingSettings:
 
 
 @dataclasses.dataclass
+class DemographicsSettings:
+    """Brochure characteristic 6. Off by default - see configs/default.yaml."""
+
+    enabled: bool = False
+    model_path: str | None = None
+    min_hits: int = 3
+    heuristic_min_confidence: float = 0.60
+
+
+@dataclasses.dataclass
 class Config:
     source: str
     output_dir: str
@@ -116,6 +126,7 @@ class Config:
     tracking: TrackingSettings
     behaviour: BehaviourSettings
     counting: CountingSettings
+    demographics: DemographicsSettings
     lines: list[Line] = dataclasses.field(default_factory=list)
 
     def scaled_lines(self, width: int, height: int) -> list[Line]:
@@ -134,6 +145,7 @@ class Config:
             tracking=_tracking_from(raw.get("tracking") or {}),
             behaviour=_behaviour_from(raw.get("behaviour") or {}),
             counting=_counting_from(raw.get("counting") or {}),
+            demographics=_demographics_from(raw.get("demographics") or {}),
             lines=[_line_from(entry) for entry in (raw.get("lines") or [])],
         )
 
@@ -197,6 +209,16 @@ def _counting_from(c: dict[str, Any]) -> CountingSettings:
             passerby_margin_fraction=float(a.get("passerby_margin_fraction", 0.10)),
             passerby_max_seconds=float(a.get("passerby_max_seconds", 3.2)),
         ),
+    )
+
+
+def _demographics_from(d: dict[str, Any]) -> DemographicsSettings:
+    model_path = d.get("model_path")
+    return DemographicsSettings(
+        enabled=bool(d.get("enabled", False)),
+        model_path=str(model_path) if model_path else None,
+        min_hits=int(d.get("min_hits", 3)),
+        heuristic_min_confidence=float(d.get("heuristic_min_confidence", 0.60)),
     )
 
 
