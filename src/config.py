@@ -109,6 +109,13 @@ class CountingSettings:
 
 
 @dataclasses.dataclass
+class AnalysisSettings:
+    """Zone reasoning (characteristics 5 and 17)."""
+
+    auto_band_count: int = 3
+
+
+@dataclasses.dataclass
 class DemographicsSettings:
     """Brochure characteristic 6. Off by default - see configs/default.yaml."""
 
@@ -126,6 +133,7 @@ class Config:
     tracking: TrackingSettings
     behaviour: BehaviourSettings
     counting: CountingSettings
+    analysis: AnalysisSettings
     demographics: DemographicsSettings
     lines: list[Line] = dataclasses.field(default_factory=list)
     zones: list[Zone] = dataclasses.field(default_factory=list)
@@ -150,6 +158,7 @@ class Config:
             tracking=_tracking_from(raw.get("tracking") or {}),
             behaviour=_behaviour_from(raw.get("behaviour") or {}),
             counting=_counting_from(raw.get("counting") or {}),
+            analysis=_analysis_from(raw.get("analysis") or {}),
             demographics=_demographics_from(raw.get("demographics") or {}),
             lines=[_line_from(entry) for entry in (raw.get("lines") or [])],
             zones=[_zone_from(entry) for entry in (raw.get("zones") or [])],
@@ -224,6 +233,10 @@ def _counting_from(c: dict[str, Any]) -> CountingSettings:
             passerby_max_seconds=float(a.get("passerby_max_seconds", 3.2)),
         ),
     )
+
+
+def _analysis_from(a: dict[str, Any]) -> AnalysisSettings:
+    return AnalysisSettings(auto_band_count=int(a.get("auto_band_count", 3)))
 
 
 def _demographics_from(d: dict[str, Any]) -> DemographicsSettings:
