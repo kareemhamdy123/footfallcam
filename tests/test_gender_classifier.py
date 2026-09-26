@@ -240,3 +240,30 @@ def test_the_same_crop_always_gets_the_same_answer():
     crop = noisy_crop(seed=7)
     answers = {classifier.classify(crop.copy()) for _ in range(5)}
     assert len(answers) == 1
+
+
+# ------------------------------------------------------------- model scoring
+
+
+def test_from_scores_converts_binary_logits_to_female_and_male():
+    from features.gender import _from_scores
+
+    # Logits where female (0) wins
+    label, conf = _from_scores(np.array([2.0, -1.0]), index=0)
+    assert label == "female"
+    assert conf > 0.90
+
+    # Logits where male (1) wins
+    label, conf = _from_scores(np.array([-2.0, 3.0]), index=1)
+    assert label == "male"
+    assert conf > 0.95
+
+
+def test_preprocess_crop_for_onnx_preserves_dimensions():
+    from features.gender import _preprocess_crop_for_onnx
+
+    crop = np.zeros((120, 60, 3), dtype=np.uint8)
+    blob = _preprocess_crop_for_onnx(crop, size=224)
+    assert blob.shape == (1, 3, 224, 224)
+    assert blob.dtype == np.float32
+

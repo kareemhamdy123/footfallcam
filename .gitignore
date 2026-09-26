@@ -15,7 +15,9 @@ outputs/*
 !outputs/.gitkeep
 data/*
 !data/.gitkeep
+!data/sample.mp4
 *.pt
 *.onnx
 *.mp4
+!data/sample.mp4
 *.avi

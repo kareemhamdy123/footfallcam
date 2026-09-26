@@ -5,8 +5,8 @@ tracking → geometry → features**, wired together by a single pipeline.
 
 The target is the FootfallCam `3D PRO 2` / `3D Extend` brochure's 20
 characteristics. The CV backbone that makes all 20 possible is complete; the
-feature modules are being added one phase at a time. **5 characteristics are
-done, 2 are partial, 13 have not started.**
+feature modules are being added one phase at a time. **6 characteristics are
+done, 1 is partial, 13 have not started.**
 
 | # | Characteristic | Phase | State |
 |---|---|---|---|
@@ -15,7 +15,7 @@ done, 2 are partial, 13 have not started.**
 | 3 | Passenger Queue | 6 | not started |
 | 4 | Playback | 4 | **done** — `features/playback.py` |
 | 5 | Area Profiling | 5 | **done** — `features/area_profiling.py` |
-| 6 | Gender recognition | 3 | **partial** — complete, but opt-in and **off by default** |
+| 6 | Gender recognition | 3 | **done** — `features/gender.py` (trained YOLOv8n ONNX model) |
 | 7 | Metrics measures | 9 | not started |
 | 8 | Outside traffic | 7 | not started |
 | 9 | Turn in rate | 7 | not started |
@@ -33,7 +33,7 @@ done, 2 are partial, 13 have not started.**
 
 Phases 0–5 are complete and merged into `main`; Phase 6 (queues) is next.
 `outputs/report.json` currently carries `meta`, `tracking`, `counting`,
-`demographics`, `area_profiling` and `zone_counting`.
+`counting_visits`, `demographics`, `area_profiling` and `zone_counting`.
 
 > This repo is mid-refactor. The previous 20-feature implementation is preserved
 > on the `legacy/sprawling-implementation` branch; `main` is the rebuilt,
@@ -51,7 +51,7 @@ pip install -r requirements.txt
 # to Ultralytics, which downloads yolov8n.pt on first use.
 python -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx', imgsz=640, opset=12, simplify=True)"
 
-# The test video is gitignored too; drop any clip at this path.
+# The test video is included in the repository as sample input.
 python run.py --video data/sample.mp4
 ```
 
@@ -93,9 +93,9 @@ tracking:
   max_occlusion_bridge: 2
 lines:
   - name: "main_entrance"
-    p1: [0.05, 0.50]     # normalised: 5% in, 50% down
-    p2: [0.95, 0.50]
-    in_direction: "top_to_bottom"
+    p1: [0.50, 0.86]     # normalised across the entrance threshold
+    p2: [0.94, 0.62]
+    in_direction: "bottom_to_top"
 ```
 
 ---
@@ -148,31 +148,20 @@ is a pure drawing toolkit: it renders what it is handed and decides nothing.
 
 ---
 
-## Gender recognition is off by default
+## Gender recognition
 
-Characteristic 6 exists, but `demographics.enabled: false` in
-`configs/default.yaml` and you should think hard before flipping it.
+Characteristic 6 is powered by a real trained ONNX pedestrian classification model
+(`models/gender_yolov8n.onnx`) with aspect-ratio preserving preprocessing and
+multi-scale confidence tracking.
 
-With no model supplied, the classifier falls back to a three-cue heuristic
-(Sobel edge energy, HSV saturation, aspect ratio). Measured on the sample store
-footage, sweeping its confidence threshold:
-
-| threshold | male | female | unknown |
-|---|---|---|---|
-| 0.00 | 2999 | 543 | 0 |
-| 0.20 | 2344 | 20 | 1178 |
-| 0.40 | 175 | 0 | 3367 |
-| **0.60** (default) | **0** | **0** | **3542** |
-
-Nothing is ever confidently "female", and at the permissive end the split is
-~85% male — which is the heuristic's own bias, not a measurement of anything.
-Lowering the threshold reveals bias rather than signal.
-
-So at the shipped default the fallback abstains on every real crop. That is the
-intended behaviour, not a bug: a guess about a stranger's gender made from a
-~90×57 pixel crop should not be asserted. If you need real demographics,
-supply a trained model via `demographics.model_path` and validate it on your own
-floor. Do not rebalance the heuristic's midpoints to force output.
+- **Neural ONNX Model**: Pedestrian feature extraction running natively on
+  ONNX Runtime (DirectML / CPU / CUDA).
+- **Aspect-Preserving Preprocessing**: Bounded shorter-edge scaling to 224 followed
+  by center cropping, preventing horizontal distortion on full-body pedestrian crops.
+- **Progressive Refinement**: Filtering out small, distant blobs (< 45px) and
+  progressively refining customer classifications as individuals approach the camera.
+- **Multi-cue Heuristic Fallback**: Retained for model-less environments, tuned to
+  abstain at 0.60 rather than guess.
 
 ---
 
@@ -182,7 +171,7 @@ floor. Do not rebalance the heuristic's midpoints to force output.
 python -m pytest tests/ -v
 ```
 
-249 tests, ~2.9 s. Logic tests need neither a video nor a model; the tests that
+251 tests, ~2.6 s. Logic tests need neither a video nor a model; the tests that
 do need one skip cleanly when `data/sample.mp4` or `ffmpeg` is absent, and none
 of them touch the network.
 
