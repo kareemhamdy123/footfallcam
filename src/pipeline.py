@@ -30,7 +30,7 @@ from .video_io import (
 )
 # Features live outside src/ and are imported by their public name only.
 from features.counter import VideoCounter
-from features.gender import DemographicsAggregator, GenderClassifier
+from features.gender import DemographicsAggregator, GenderClassifier, UNKNOWN
 from features.playback import PlaybackEngine
 from features.area_profiling import AreaProfiler
 from features.zone_counting import ZoneCounter
@@ -124,13 +124,24 @@ class Pipeline:
                         )
                     dt_s = 1.0 / info["fps"] if info["fps"] else 0.0
                     profiler.update(active_tracks, dt_s)
-                    zone_counter.update(active_tracks)
+                    zone_counts = zone_counter.update(active_tracks)
+                    p_summary = profiler.summary()
+                    t_zones = {t.track_id: zone_counter.zone_of(t) for t in active_tracks}
+                    queue_headcount = sum(zone_counts.get(z.name, 0) for z in configured_zones if getattr(z, "kind", "") == "queue")
                     annotated = playback.render_proof_frame(
                         frame,
                         active_tracks,
                         detections_by_id=_detections_by_id(detections, active_tracks),
                         counts_summary=counter.summary(),
-                        kpis={"demo": _demo_kpi(demographics)},
+                        kpis={
+                            "demo": _demo_kpi(demographics),
+                            "queues": queue_headcount,
+                        },
+                        zone_counts=zone_counts,
+                        zone_peaks=zone_counter.peak,
+                        dwell_percentages=p_summary.get("engagement_percentage", {}),
+                        track_zones=t_zones,
+                        fps=info["fps"] or 13.093,
                     )
                     writer.write(annotated)
 
@@ -146,6 +157,19 @@ class Pipeline:
 
         elapsed_s = time.time() - started
         transcode_ok = convert_to_h264_web(annotated_path)
+
+        counting_summary = counter.summary()
+        counting_summary["events_log"] = counter.events
+
+        visits = []
+        for tid, t_pos in counter._first_seen.items():
+            last_t = counter._last_seen.get(tid, t_pos)[0]
+            visits.append({
+                "track_id": tid,
+                "first_seen_s": round(t_pos[0], 2),
+                "last_seen_s": round(last_t, 2),
+                "dwell_seconds": round(last_t - t_pos[0], 2),
+            })
 
         report = {
             "meta": {
@@ -163,7 +187,8 @@ class Pipeline:
                 "live_tracks": len(active_tracks),
                 "total_tracks_opened": tracker.total_opened,
             },
-            "counting": counter.summary(),
+            "counting": counting_summary,
+            "counting_visits": visits,
             "demographics": demographics.summary(),
             "area_profiling": profiler.summary(),
             "zone_counting": zone_counter.summary(),
@@ -225,18 +250,32 @@ def _classify_demographics(
     aggregator: DemographicsAggregator,
     settings,
 ) -> None:
-    """Classify each settled, not-yet-classified track once (characteristic 6).
-
-    Gated on `hits >= min_hits` so a person's label is not decided from the
-    first two frames, when the box is still settling onto them.
-    """
+    """Classify settled tracks progressively with highest confidence (characteristic 6)."""
     for track in tracks:
-        if track.gender is not None or track.hits < settings.min_hits:
+        if track.hits < settings.min_hits:
             continue
+        cur_gender = getattr(track, "gender", None)
+        cur_conf = getattr(track, "gender_confidence", 0.0)
+        cur_crop_h = getattr(track, "_gender_crop_h", 0)
+
         crop = _person_crop(frame, track)
-        label, _confidence = classifier.classify(crop)
-        track.gender = label
-        aggregator.record_track(track)
+        if crop is None or crop.shape[0] < 45 or crop.shape[1] < 18:
+            continue
+
+        if cur_gender in ("male", "female") and cur_crop_h >= 100 and cur_conf >= 0.65:
+            continue
+
+        label, confidence = classifier.classify(crop)
+        is_substantially_larger = crop.shape[0] > (cur_crop_h + 20)
+        if label != UNKNOWN and (confidence > cur_conf or (is_substantially_larger and confidence >= 0.52)):
+            track.gender = label
+            track.gender_confidence = confidence
+            track._gender_crop_h = crop.shape[0]
+            aggregator.record_track(track)
+        elif cur_gender is None:
+            track.gender = UNKNOWN
+            track.gender_confidence = 0.0
+            track._gender_crop_h = crop.shape[0]
 
 
 def _person_crop(frame, track) -> np.ndarray | None:

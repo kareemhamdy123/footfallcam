@@ -48,6 +48,11 @@ class PlaybackEngine:
         counts_summary: dict | None = None,
         kpis: dict | None = None,
         queue_monitor=None,
+        zone_counts: dict | None = None,
+        zone_peaks: dict | None = None,
+        dwell_percentages: dict | None = None,
+        track_zones: dict[int, str] | None = None,
+        fps: float = 13.0,
     ) -> "np.ndarray":
         """Return the annotated frame for one video frame.
 
@@ -55,6 +60,11 @@ class PlaybackEngine:
         overlay, but the feature that discovers queues is Phase 6, so nothing
         renders until then.
         """
+        summary = counts_summary or {}
+        line_counts = summary.get("per_line")
+        footer_telemetry = self.build_footer_telemetry(
+            summary, zone_counts, zone_peaks, dwell_percentages
+        )
         return annotate_frame(
             frame,
             tracks=tracks,
@@ -64,7 +74,45 @@ class PlaybackEngine:
             queue_polygons=self._queue_polygons(queue_monitor),
             kpis=self.build_kpis(counts_summary, kpis),
             audit_badge=self.audit_badge_text(),
+            line_counts=line_counts,
+            zone_counts=zone_counts,
+            track_zones=track_zones,
+            fps=fps,
+            footer_telemetry=footer_telemetry,
         )
+
+    def build_footer_telemetry(
+        self,
+        counts_summary: dict | None,
+        zone_counts: dict | None,
+        zone_peaks: dict | None,
+        dwell_percentages: dict | None,
+    ) -> str | None:
+        """Format a clean, single-line telemetry string across finished features."""
+        parts = []
+        if zone_counts:
+            z_strs = []
+            for z_name, count in zone_counts.items():
+                short = "Till" if "till" in z_name.lower() else ("Sales" if "sales" in z_name.lower() else z_name)
+                pk = zone_peaks.get(z_name, count) if zone_peaks else count
+                z_strs.append(f"{short} {count} (Pk {pk})")
+            parts.append(f"ZONES: {' | '.join(z_strs)}")
+
+        if dwell_percentages:
+            d_strs = []
+            for z_name, pct in dwell_percentages.items():
+                short = "Till" if "till" in z_name.lower() else ("Sales" if "sales" in z_name.lower() else z_name)
+                d_strs.append(f"{short} {pct:.0f}%")
+            if d_strs:
+                parts.append(f"DWELL: {' | '.join(d_strs)}")
+
+        if counts_summary:
+            groups = counts_summary.get("group_entries", 0)
+            co_pairs = counts_summary.get("group_stats", {}).get("co_movement_pairs", 0)
+            if groups or co_pairs:
+                parts.append(f"GROUPS: {groups} ({co_pairs} co-move)")
+
+        return "   |   ".join(parts) if parts else None
 
     def build_kpis(
         self, counts_summary: dict | None = None, extra: dict | None = None

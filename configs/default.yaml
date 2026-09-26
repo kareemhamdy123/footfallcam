@@ -65,34 +65,30 @@ counting:
 # if you have validated it on your own floor. See the ethics section of the
 # README before switching this on.
 demographics:
-  enabled: false
-  model_path: null          # ONNX model; null uses the heuristic fallback
+  enabled: true
+  model_path: "models/gender_yolov8n.onnx"
   min_hits: 3               # do not classify a track before it is this settled
-  # Heuristic only: below this agreement between cues the answer is "unknown"
-  # rather than a coin flip. 0.60 makes the model-less fallback abstain on
-  # essentially every real crop, which is the intended behaviour - see the
-  # measured table at the top of features/gender.py before lowering it.
-  heuristic_min_confidence: 0.60
+  heuristic_min_confidence: 0.54
 
 lines:
+  # Aligned with the physical entrance doorway and black mat threshold.
+  # Entering customers cross from bottom-right (doorway) into the store.
   - name: "main_entrance"
-    p1: [0.05, 0.50]
-    p2: [0.95, 0.50]
-    in_direction: "top_to_bottom"
+    p1: [0.50, 0.86]
+    p2: [0.94, 0.62]
+    in_direction: "bottom_to_top"
 
 analysis:
   # Zero-config fallback: with no zones configured above, divide the frame into
   # this many full-width horizontal bands by relative Y (near -> far).
   auto_band_count: 3
 
-# Polygons tinted on the annotated output. Rendering arrives in Phase 4; the
-# features that *reason* about zones (area profiling, zone headcounts) are
-# Phase 5. kind selects the tint: generic | queue | sales | safe_occupancy |
-# outside.
+# 3D perspective floor zones matching the physical layout of the store.
+# kind selects the tint: generic | queue | sales | safe_occupancy | outside.
 zones:
+  - name: "checkout_till"
+    kind: "queue"
+    polygon: [[0.08, 0.40], [0.32, 0.40], [0.36, 0.72], [0.08, 0.72]]
   - name: "sales_floor"
     kind: "sales"
-    polygon: [[0.30, 0.05], [0.72, 0.05], [0.72, 0.45], [0.30, 0.45]]
-  - name: "entrance_lane"
-    kind: "queue"
-    polygon: [[0.02, 0.55], [0.30, 0.55], [0.30, 0.98], [0.02, 0.98]]
+    polygon: [[0.56, 0.18], [0.78, 0.18], [0.88, 0.58], [0.52, 0.58]]

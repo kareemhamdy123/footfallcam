@@ -103,6 +103,11 @@ class GenderClassifier:
                 model_path, providers=ort.get_available_providers()
             )
             self._onnx_input = self._onnx_session.get_inputs()[0].name
+            inp_shape = self._onnx_session.get_inputs()[0].shape
+            if len(inp_shape) >= 4 and isinstance(inp_shape[2], int) and isinstance(inp_shape[3], int):
+                self._input_size = (inp_shape[3], inp_shape[2])
+            else:
+                self._input_size = (224, 224)
             self.backend = "onnx"
             return True
         except Exception as exc:  # pragma: no cover - environment specific
@@ -132,15 +137,15 @@ class GenderClassifier:
         return _normalise(label, confidence)
 
     def _classify_onnx(self, crop: np.ndarray) -> tuple[str, float]:
-        # Layout is the model's own contract; a 224 square batch is the common
-        # case for an ImageNet-style gender classifier.
-        resized = cv2.resize(crop, (224, 224), interpolation=cv2.INTER_LINEAR)
-        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-        blob = np.transpose(rgb.astype(np.float32) / 255.0, (2, 0, 1))[np.newaxis]
+        size = getattr(self, "_input_size", (224, 224))[0]
+        blob = _preprocess_crop_for_onnx(crop, size=size)
         output = self._onnx_session.run(None, {self._onnx_input: blob})[0]
         scores = np.asarray(output).reshape(-1)
         index = int(scores.argmax())
-        return _from_scores(scores, index)
+        label, confidence = _from_scores(scores, index)
+        if confidence < self.min_confidence:
+            return (UNKNOWN, confidence)
+        return (label, confidence)
 
     def _classify_heuristic(self, crop: np.ndarray) -> tuple[str, float]:
         cues = extract_cues(crop)
@@ -221,11 +226,45 @@ def _squash(value: float, midpoint: float) -> float:
     return math.tanh((value - midpoint) / max(1e-6, abs(midpoint)))
 
 
+def _preprocess_crop_for_onnx(crop: np.ndarray, size: int = 224) -> np.ndarray:
+    """Preprocess crop preserving aspect ratio then center-cropping to (size, size)."""
+    h, w = crop.shape[:2]
+    if h <= 0 or w <= 0:
+        return np.zeros((1, 3, size, size), dtype=np.float32)
+    if h < w:
+        new_h = size
+        new_w = max(size, int(round(w * size / h)))
+    else:
+        new_w = size
+        new_h = max(size, int(round(h * size / w)))
+    resized = cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+    y0 = max(0, (new_h - size) // 2)
+    x0 = max(0, (new_w - size) // 2)
+    cropped = resized[y0:y0 + size, x0:x0 + size]
+    if cropped.shape[:2] != (size, size):
+        cropped = cv2.resize(cropped, (size, size), interpolation=cv2.INTER_LINEAR)
+    if cropped.ndim == 2:
+        rgb = cv2.cvtColor(cropped, cv2.COLOR_GRAY2RGB)
+    else:
+        rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
+    blob = np.transpose(rgb.astype(np.float32) / 255.0, (2, 0, 1))[np.newaxis]
+    return blob
+
+
 def _from_scores(scores: np.ndarray, index: int) -> tuple[str, float]:
-    """Map a model's class scores onto our labels."""
-    total = float(np.sum(scores))
-    probabilities = scores / total if total > 0 else scores
-    label = LABELS[index] if index < len(LABELS) else UNKNOWN
+    """Map a model's class scores onto our labels using softmax."""
+    scores_arr = np.asarray(scores, dtype=np.float32).reshape(-1)
+    exp_scores = np.exp(scores_arr - np.max(scores_arr))
+    total = float(np.sum(exp_scores))
+    probabilities = exp_scores / total if total > 0 else scores_arr
+    if len(scores_arr) == 2:
+        # Standard binary classification: 0 = female, 1 = male (e.g. YOLOv8-cls, ImageNet-gender)
+        binary_labels = ("female", "male")
+        label = binary_labels[index] if index < len(binary_labels) else UNKNOWN
+    elif index < len(LABELS):
+        label = LABELS[index]
+    else:
+        label = UNKNOWN
     return (label, float(probabilities[index]))
 
 
@@ -242,7 +281,11 @@ class DemographicsAggregator:
     def __init__(self) -> None:
         self.counts: dict[str, int] = {label: 0 for label in LABELS}
         self.sales_conversations: dict[str, int] = {label: 0 for label in LABELS}
-        self.seen_track_ids: set[int] = set()
+        self.track_labels: dict[int, str] = {}
+
+    @property
+    def seen_track_ids(self) -> set[int]:
+        return set(self.track_labels.keys())
 
     def record_track(self, track: "Track") -> str | None:
         """Record one track's gender. A track is only ever counted once.
@@ -254,9 +297,12 @@ class DemographicsAggregator:
             return None
         track_id = getattr(track, "track_id", None)
         if track_id is not None:
-            if track_id in self.seen_track_ids:
+            prev = self.track_labels.get(track_id)
+            if prev == gender:
                 return None  # idempotent per person
-            self.seen_track_ids.add(track_id)
+            if prev is not None:
+                self.counts[prev] = max(0, self.counts[prev] - 1)
+            self.track_labels[track_id] = gender
         self.counts[gender] += 1
         return gender
 
@@ -290,7 +336,7 @@ class DemographicsAggregator:
         for label in LABELS:
             self.counts[label] = 0
             self.sales_conversations[label] = 0
-        self.seen_track_ids.clear()
+        self.track_labels.clear()
 
 
 def _percentage(part: int, whole: int) -> float:
